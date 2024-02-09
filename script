@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# Function to print usage information
+show_usage() {
+    echo "Usage: $0 [-u username1 username2 ...] [-f filename] [--help]" 1>&2
+    exit 1
+}
+
+# Function to generate a random password
+generate_password() {
+    tr -dc '[:alnum:]' < /dev/urandom | fold -w 10 | head -n 1
+}
+
+# Function to check if a username follows naming conventions
+check_username() {
+    if [[ ! $1 =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "Invalid username: $1. Usernames must not contain spaces or @." 1>&2
+        return 1
+    fi
+}
+
+# Function to create a new user
+create_user() {
+    username=$1
+    if id "$username" &>/dev/null; then
+        echo "User $username already exists. Skipping."
+    else
+        password=$(generate_password)
+        useradd -m -s /bin/bash "$username"
+        echo "$username:$password" | chpasswd
+        echo "User $username created with password: $password"
+        chage -d 0 "$username"  # Force password change at the next login
+        echo "Username: $username, Password: $password" >> user_credentials.txt
+    fi
+}
+
+# Main program starts here
+while getopts ":u:f:-:" opt; do
+    case $opt in
+        u)
+            shift $((OPTIND-2))
+            for username in "$@"; do
+                check_username "$username" && create_user "$username"
+            done
+            exit
+            ;;
+        f)
+            filename=$OPTARG
+            while IFS= read -r username; do
+                check_username "$username" && create_user "$username"
+            done < "$filename"
+            exit
+            ;;
+        -)
+            if [ "${OPTARG}" == "help" ]; then
+                show_usage
+            else
+                echo "Invalid option: --$OPTARG" 1>&2
+                show_usage
+            fi
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" 1>&2
+            show_usage
+            ;;
+        :)
+            echo "Option -$OPTARG requires an argument." 1>&2
+            show_usage
+            ;;
+    esac
+done
+
+# If no valid options are provided, show usage
+show_usage
